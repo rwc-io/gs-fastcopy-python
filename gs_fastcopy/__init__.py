@@ -222,3 +222,128 @@ def _write_gs_uri(buffer_file_name, gs_uri, max_workers, chunk_size, billing_pro
 
     # TODO: handle errors in transfer_manager
     transfer_manager.upload_chunks_concurrently(buffer_file_name, gs_blob, **args)
+
+
+def _compress_local(src_file, dest_file):
+    tool = "pigz" if shutil.which("pigz") else "gzip"
+    with open(dest_file, "wb") as f_out:
+        result = subprocess.run(
+            [tool, "-c", src_file],
+            stdout=f_out,
+            stderr=subprocess.PIPE,
+        )
+    if result.returncode != 0:
+        raise Exception(f"Failed to compress {src_file}: stderr: {result.stderr}")
+
+
+def _decompress_local(src_file, dest_file):
+    tool = "unpigz" if shutil.which("unpigz") else "gunzip"
+    with open(dest_file, "wb") as f_out:
+        result = subprocess.run(
+            [tool, "-c", "-d", src_file],
+            stdout=f_out,
+            stderr=subprocess.PIPE,
+        )
+    if result.returncode != 0:
+        raise Exception(f"Failed to decompress {src_file}: stderr: {result.stderr}")
+
+
+def _gcloud_copy_gcs_to_gcs(src, dest, billing_project=None):
+    gcloud_cmd = ["gcloud", "storage", "cp"]
+    if billing_project:
+        gcloud_cmd += ["--billing-project", billing_project]
+    gcloud_cmd += [src, dest]
+
+    result = subprocess.run(
+        gcloud_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
+    )
+
+    if result.returncode != 0:
+        raise Exception(
+            f"Failed to copy GCS to GCS from {src} to {dest}: stderr: {result.stderr}"
+        )
+
+
+def copy(src=None, dest=None, max_workers=None, chunk_size=None, billing_project=None, **kwargs):
+    """
+    Copies a file from `src` to `dest`. Handles local files, Google Cloud Storage
+    URIs (gs://), and transparent compression/decompression.
+
+    :param src: The source file path or GCS URI.
+    :param dest: The destination file path or GCS URI.
+    :param max_workers: The maximum number of workers to use for GCS upload. None for default.
+    :param chunk_size: The size of each chunk to upload. None for default.
+    :param billing_project: The billing project for the transfer.
+    """
+    # Fallback to alternative names, e.g. supporting positional first arg/second arg
+    # or keyword args such as from_, to_, from, to (via **kwargs).
+    src = src or kwargs.get("from_path") or kwargs.get("from_") or kwargs.get("source") or kwargs.get("from")
+    dest = dest or kwargs.get("to_path") or kwargs.get("to_") or kwargs.get("destination") or kwargs.get("to")
+
+    if not src or not dest:
+        raise ValueError("Both source and destination must be specified.")
+
+    if max_workers is None:
+        max_workers = _get_available_cpus()
+
+    src_is_gcs = src.startswith("gs://")
+    dest_is_gcs = dest.startswith("gs://")
+
+    src_is_gz = src.endswith(".gz")
+    dest_is_gz = dest.endswith(".gz")
+
+    if not src_is_gcs and not dest_is_gcs:
+        if src_is_gz == dest_is_gz:
+            shutil.copy2(src, dest)
+        elif dest_is_gz:
+            _compress_local(src, dest)
+        else:
+            _decompress_local(src, dest)
+
+    elif src_is_gcs != dest_is_gcs:
+        if src_is_gcs:
+            # GCS to Local
+            if src_is_gz == dest_is_gz:
+                _download_gs_uri(src, dest, billing_project)
+            else:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    suffix = ".gz" if src_is_gz else ""
+                    buffer_file = os.path.join(tmp_dir, f"download_buffer{suffix}")
+                    _download_gs_uri(src, buffer_file, billing_project)
+                    if dest_is_gz:
+                        _compress_local(buffer_file, dest)
+                    else:
+                        _decompress_local(buffer_file, dest)
+        else:
+            # Local to GCS
+            if src_is_gz == dest_is_gz:
+                _write_gs_uri(src, dest, max_workers, chunk_size, billing_project)
+            else:
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    suffix = ".gz" if dest_is_gz else ""
+                    buffer_file = os.path.join(tmp_dir, f"upload_buffer{suffix}")
+                    if dest_is_gz:
+                        _compress_local(src, buffer_file)
+                    else:
+                        _decompress_local(src, buffer_file)
+                    _write_gs_uri(buffer_file, dest, max_workers, chunk_size, billing_project)
+
+    else:
+        # Both are GCS URIs
+        if src_is_gz == dest_is_gz:
+            _gcloud_copy_gcs_to_gcs(src, dest, billing_project)
+        else:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                dl_suffix = ".gz" if src_is_gz else ""
+                download_buffer = os.path.join(tmp_dir, f"download_buffer{dl_suffix}")
+                _download_gs_uri(src, download_buffer, billing_project)
+
+                ul_suffix = ".gz" if dest_is_gz else ""
+                upload_buffer = os.path.join(tmp_dir, f"upload_buffer{ul_suffix}")
+
+                if dest_is_gz:
+                    _compress_local(download_buffer, upload_buffer)
+                else:
+                    _decompress_local(download_buffer, upload_buffer)
+
+                _write_gs_uri(upload_buffer, dest, max_workers, chunk_size, billing_project)
