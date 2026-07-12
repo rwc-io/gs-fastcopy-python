@@ -53,25 +53,6 @@ def test_copy_local_to_local_decompression(local_files):
         assert f.read() == JSON_STR
 
 
-# --- Keyword arguments handling tests ---
-
-def test_copy_keyword_arguments(local_files):
-    src, dest, _, _ = local_files
-    # Test 'from' and 'to' in kwargs
-    gs_fastcopy.copy(**{"from": src, "to": dest})
-    assert os.path.exists(dest)
-    with open(dest, "rb") as f:
-        assert f.read() == JSON_STR
-
-    # Test 'from_' and 'to_'
-    os.remove(dest)
-    gs_fastcopy.copy(from_=src, to_=dest)
-    assert os.path.exists(dest)
-
-    # Test 'from_path' and 'to_path'
-    os.remove(dest)
-    gs_fastcopy.copy(from_path=src, to_path=dest)
-    assert os.path.exists(dest)
 
 
 # --- GCS mocked transfers ---
@@ -201,7 +182,7 @@ def test_copy_gcs_to_gcs_same_compression():
 
 
 @patch("gs_fastcopy.transfer_manager.upload_chunks_concurrently")
-def test_copy_gcs_to_gcs_mixed_compression(mock_upload):
+def test_copy_gcs_to_gcs_mixed_compression_uncompressed_to_compressed(mock_upload):
     uploaded = []
     mock_upload.side_effect = build_upload_chunks_concurrently_mock(uploaded)
     mock_run, run_calls = build_subprocess_run_mock()
@@ -216,3 +197,21 @@ def test_copy_gcs_to_gcs_mixed_compression(mock_upload):
 
     assert len(uploaded) == 1
     assert uploaded[0] == ("dest.json.gz", JSON_STR)
+
+
+@patch("gs_fastcopy.transfer_manager.upload_chunks_concurrently")
+def test_copy_gcs_to_gcs_mixed_compression_compressed_to_uncompressed(mock_upload):
+    uploaded = []
+    mock_upload.side_effect = build_upload_chunks_concurrently_mock(uploaded)
+    mock_run, run_calls = build_subprocess_run_mock()
+
+    with patch("gs_fastcopy.subprocess.run", side_effect=mock_run):
+        gs_fastcopy.copy("gs://my-bucket/src.json.gz", "gs://my-bucket/dest.json")
+
+    # Should download src.json.gz to temp file first, then decompress to another temp file, then upload
+    gcloud_dl_calls = [c for c in run_calls if c[0:3] == ["gcloud", "storage", "cp"] and c[-2].startswith("gs://")]
+    assert len(gcloud_dl_calls) == 1
+    assert gcloud_dl_calls[0][-2] == "gs://my-bucket/src.json.gz"
+
+    assert len(uploaded) == 1
+    assert uploaded[0] == ("dest.json", JSON_STR)

@@ -264,7 +264,7 @@ def _gcloud_copy_gcs_to_gcs(src, dest, billing_project=None):
         )
 
 
-def copy(src=None, dest=None, max_workers=None, chunk_size=None, billing_project=None, **kwargs):
+def copy(src, dest, max_workers=None, chunk_size=None, billing_project=None):
     """
     Copies a file from `src` to `dest`. Handles local files, Google Cloud Storage
     URIs (gs://), and transparent compression/decompression.
@@ -275,14 +275,6 @@ def copy(src=None, dest=None, max_workers=None, chunk_size=None, billing_project
     :param chunk_size: The size of each chunk to upload. None for default.
     :param billing_project: The billing project for the transfer.
     """
-    # Fallback to alternative names, e.g. supporting positional first arg/second arg
-    # or keyword args such as from_, to_, from, to (via **kwargs).
-    src = src or kwargs.get("from_path") or kwargs.get("from_") or kwargs.get("source") or kwargs.get("from")
-    dest = dest or kwargs.get("to_path") or kwargs.get("to_") or kwargs.get("destination") or kwargs.get("to")
-
-    if not src or not dest:
-        raise ValueError("Both source and destination must be specified.")
-
     if max_workers is None:
         max_workers = _get_available_cpus()
 
