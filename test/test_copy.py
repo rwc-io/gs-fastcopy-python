@@ -29,6 +29,7 @@ def local_files():
 
 # --- Local to Local tests ---
 
+
 def test_copy_local_to_local_no_compression(local_files):
     src, dest, _, _ = local_files
     gs_fastcopy.copy(src, dest)
@@ -51,8 +52,6 @@ def test_copy_local_to_local_decompression(local_files):
     assert os.path.exists(dest)
     with open(dest, "rb") as f:
         assert f.read() == JSON_STR
-
-
 
 
 # --- GCS mocked transfers ---
@@ -93,6 +92,7 @@ def build_upload_chunks_concurrently_mock(uploaded_data):
             if buffer_file_name.endswith(".gz"):
                 data = gzip.decompress(data)
             uploaded_data.append((gs_blob.name, data))
+
     return side_effecter
 
 
@@ -191,7 +191,11 @@ def test_copy_gcs_to_gcs_mixed_compression_uncompressed_to_compressed(mock_uploa
         gs_fastcopy.copy("gs://my-bucket/src.json", "gs://my-bucket/dest.json.gz")
 
     # Should download src.json (not gzipped) to temp file first, then compress to another temp file, then upload
-    gcloud_dl_calls = [c for c in run_calls if c[0:3] == ["gcloud", "storage", "cp"] and c[-2].startswith("gs://")]
+    gcloud_dl_calls = [
+        c
+        for c in run_calls
+        if c[0:3] == ["gcloud", "storage", "cp"] and c[-2].startswith("gs://")
+    ]
     assert len(gcloud_dl_calls) == 1
     assert gcloud_dl_calls[0][-2] == "gs://my-bucket/src.json"
 
@@ -209,7 +213,11 @@ def test_copy_gcs_to_gcs_mixed_compression_compressed_to_uncompressed(mock_uploa
         gs_fastcopy.copy("gs://my-bucket/src.json.gz", "gs://my-bucket/dest.json")
 
     # Should download src.json.gz to temp file first, then decompress to another temp file, then upload
-    gcloud_dl_calls = [c for c in run_calls if c[0:3] == ["gcloud", "storage", "cp"] and c[-2].startswith("gs://")]
+    gcloud_dl_calls = [
+        c
+        for c in run_calls
+        if c[0:3] == ["gcloud", "storage", "cp"] and c[-2].startswith("gs://")
+    ]
     assert len(gcloud_dl_calls) == 1
     assert gcloud_dl_calls[0][-2] == "gs://my-bucket/src.json.gz"
 

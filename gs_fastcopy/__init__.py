@@ -318,7 +318,9 @@ def copy(src, dest, max_workers=None, chunk_size=None, billing_project=None):
                         _compress_local(src, buffer_file)
                     else:
                         _decompress_local(src, buffer_file)
-                    _write_gs_uri(buffer_file, dest, max_workers, chunk_size, billing_project)
+                    _write_gs_uri(
+                        buffer_file, dest, max_workers, chunk_size, billing_project
+                    )
 
     else:
         # Both are GCS URIs
@@ -338,4 +340,6 @@ def copy(src, dest, max_workers=None, chunk_size=None, billing_project=None):
                 else:
                     _decompress_local(download_buffer, upload_buffer)
 
-                _write_gs_uri(upload_buffer, dest, max_workers, chunk_size, billing_project)
+                _write_gs_uri(
+                    upload_buffer, dest, max_workers, chunk_size, billing_project
+                )
