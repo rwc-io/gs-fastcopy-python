@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gs_fastcopy"
-version = "1.0-alpha6"
+version = "1.0-alpha7"
 description = "Optimized file transfer and compression for large files on Google Cloud Storage"
 readme = "README.md"
 authors = [{ name = "David Haley", email = "dchaley@gmail.com" }]
